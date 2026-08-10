@@ -5,6 +5,20 @@ All notable changes to this project are documented in this file.
 The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+
+## [1.1.0] - 2026-08-10
+
+Bug fixes, parameter improvements, and help expansion
+
+- Fix typo: IsNullOrWhiteSpace mistyped as INullOrWhiteSpace in Get-FileMetadata.  
+- Rename Test-IgnoredPath to Test-IsIgnoredPath.  
+- Make -OutputFile optional; it was incorrectly marked Mandatory.  
+- Add ValidateScript input validation to -Path and -OutputFile.  
+- Expand comment-based help with .PARAMETER, .NOTES, and .LINK sections.  
+- Add author, version history, and license metadata to script header.  
+- Ensure reasonable line lengths are adhered to.
+
+
 ## [1.0.0] - 2026-08-07
 
 ### Added
