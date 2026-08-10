@@ -5,10 +5,16 @@ All notable changes to this project are documented in this file.
 The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-08-10
+Bug fix. 
+
+- Fix issue with parameter validation introduced in v1.1.
+- Improve the parameter examples in the comment help section.
+
 
 ## [1.1.0] - 2026-08-10
 
-Bug fixes, parameter improvements, and help expansion
+Bug fixes, parameter improvements, and help expansion.
 
 - Fix typo: IsNullOrWhiteSpace mistyped as INullOrWhiteSpace in Get-FileMetadata.  
 - Rename Test-IgnoredPath to Test-IsIgnoredPath.  
