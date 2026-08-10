@@ -33,14 +33,22 @@ If specified, prints runtime usage summary after scan.
 If specified, displays a progress bar while scanning files.
 
 .EXAMPLE
-.\Find-DotNetApps.ps1 -Path C:\Apps -IgnoreSubDirs -IncludeSummary -ShowProgress -Verbose
+.\Find-DotNetApps.ps1  -Path "C:\Program Files\" -OutputFile "C:\Temp\PF.csv"
+Scans 'C:\Program Files' recursively and exports results to csv file.
+
+.EXAMPLE
+.\Find-DotNetApps.ps1  -Path "C:\Program Files\" -OutputFile "C:\Temp\PF.csv" `
+                       -IncludeSummary -ShowProgress
+Scans 'C:\Program Files' recursively and exports results to csv file, showing a progress bar and 
+printing a summary.
 
 .NOTES
     Author:  Gary Palmer
     Created: 2026-08-07
     Updated: 2026-08-10
-    Version: 1.1 - Minor updates and bug fixes
-             1.0 — Initial release
+    Version: 1.1.1 - Minor update and bug fix for parameter validation
+             1.1.0 - Minor updates and bug fixes
+             1.0.0 — Initial release
 
     License: MIT 
 
@@ -75,9 +83,27 @@ param(
     #OutputFile - If specified, exports results to CSV at this path
     [ValidateNotNullOrEmpty()]
     [ValidateScript({
-        if (-not (Test-Path $_ -PathType Leaf)) {
-            throw "The file path '$_' is invalid or does not point to an existing file."
+       # Check path syntax
+        try {
+            $fullPath = [System.IO.Path]::GetFullPath($_)
         }
+        catch {
+            throw "Invalid file path: '$_'"
+        }
+
+        # Check parent folder exists
+        $parent = [System.IO.Path]::GetDirectoryName($fullPath)
+
+        if (-not $parent -or -not (Test-Path -LiteralPath $parent -PathType Container)) {
+            throw "Parent folder does not exist: '$parent'"
+        }
+
+        # Check the supplied path isn't an existing directory
+        if (Test-Path -LiteralPath $fullPath -PathType Container) {
+            throw "Output path is an existing directory: '$fullPath'"
+        }
+
+        # Validation succeeded
         return $true
     })]
     [string]$OutputFile,
