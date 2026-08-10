@@ -14,8 +14,6 @@ Uses staged detection:
 
 Designed for PowerShell 5.1+ on standard Windows installs.
 
-.VERSION 1.0
-
 .PARAMETER Path
 Root folder to scan. Mandatory.
 
@@ -23,7 +21,7 @@ Root folder to scan. Mandatory.
 If specified, do not scan subfolders recursively.
 
 .PARAMETER IncludeNative
-If specified, includes native (non-.NET) binaries when scanning.
+If specified, includes native (non-.NET) binaries in the output.
 
 .PARAMETER OutputFile
 If specified, exports results to CSV at this path.
@@ -36,23 +34,61 @@ If specified, displays a progress bar while scanning files.
 
 .EXAMPLE
 .\Find-DotNetApps.ps1 -Path C:\Apps -IgnoreSubDirs -IncludeSummary -ShowProgress -Verbose
+
+.NOTES
+    Author:  Gary Palmer
+    Created: 2026-08-07
+    Updated: 2026-08-10
+    Version: 1.1 - Minor updates and bug fixes
+             1.0 — Initial release
+
+    License: MIT 
+
+    .LICENSEURI
+    https://github.com/gary-palmer/Find-DotNetApps.ps1/blob/main/LICENSE
+    
+    .RELEASENOTES
+    https://github.com/gary-palmer/Find-DotNetApps.ps1/blob/main/CHANGELOG.md
+
+    
+.LINK
+https://github.com/gary-palmer/Find-DotNetApps.ps1
+
 #>
 
 [CmdletBinding()]
 param(
+    #Path - Root folder to scan for .NET applications
     [Parameter(Mandatory = $true)]
     [ValidateNotNullOrEmpty()]
+    [ValidateScript({
+        if (-not (Test-Path $_ -PathType Container)) {
+            throw "The folder path '$_' is invalid or does not point to an existing folder."
+        }
+        return $true
+    })]
     [string]$Path,
 
+    #IgnoreSubDirs - If specified, do not scan subfolders recursively
     [switch]$IgnoreSubDirs,
 
-    [Parameter(Mandatory = $true)]
+    #OutputFile - If specified, exports results to CSV at this path
+    [ValidateNotNullOrEmpty()]
+    [ValidateScript({
+        if (-not (Test-Path $_ -PathType Leaf)) {
+            throw "The file path '$_' is invalid or does not point to an existing file."
+        }
+        return $true
+    })]
     [string]$OutputFile,
 
+    #IncludeSummary - If specified, prints runtime usage summary after scan
     [switch]$IncludeSummary,
 
+    #IncludeNative - If specified, includes native (non-.NET) binaries in the output
     [switch]$IncludeNative,
 
+    #ShowProgress - If specified, displays a progress bar while scanning files (Can affect Performance)
     [switch]$ShowProgress 
 )
 
@@ -60,7 +96,19 @@ $DebugPreference = "Continue"
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-function Test-IgnoredPath {
+
+# ==== Methods ========================================================================================================
+<#
+.SYNOPSIS
+Determines whether a path should be skipped during scanning.
+
+.DESCRIPTION
+Returns $true for standard Windows system paths that are not useful for .NET application discovery.
+
+.PARAMETER FullPath
+The full path to evaluate.
+#>
+function Test-IsIgnoredPath {
     param(
         [Parameter(Mandatory = $true)]
         [string]$FullPath
@@ -74,6 +122,17 @@ function Test-IgnoredPath {
     )
 }
 
+
+<#
+.SYNOPSIS
+Reads basic application metadata for a file.
+
+.DESCRIPTION
+Extracts the application name and version from file metadata when available.
+
+.PARAMETER File
+The file to inspect.
+#>
 function Get-FileMetadata {
     param(
         [Parameter(Mandatory = $true)]
@@ -93,7 +152,7 @@ function Get-FileMetadata {
         if ($vi -and -not [string]::IsNullOrWhiteSpace($vi.ProductVersion)) {
             $appVersion = Repair-Mojibake -Text $vi.ProductVersion
         }
-        elseif ($vi -and -not [string]::INullOrWhiteSpace($vi.FileVersion)) {
+        elseif ($vi -and -not [string]::IsNullOrWhiteSpace($vi.FileVersion)) {
             $appVersion = Repair-Mojibake -Text $vi.FileVersion
         }
     }
@@ -107,6 +166,17 @@ function Get-FileMetadata {
     }
 }
 
+
+<#
+.SYNOPSIS
+Converts a target framework moniker into a normalized display value.
+
+.DESCRIPTION
+Maps common TFM values such as net8.0, netstandard2.0, and .NET Framework monikers to readable strings.
+
+.PARAMETER Tfm
+The target framework moniker to normalize.
+#>
 function Get-TargetFrameworkFromTFM {
     param([string]$Tfm)
 
@@ -134,6 +204,16 @@ function Get-TargetFrameworkFromTFM {
     }
 }
 
+<#
+.SYNOPSIS
+Converts a runtime framework name into a readable target framework value.
+
+.DESCRIPTION
+Parses framework names such as .NETCoreApp, .NETFramework, and .NETStandard into normalized strings.
+
+.PARAMETER FrameworkName
+The framework name to parse.
+#>
 function Get-TargetFrameworkFromFrameworkName {
     param([string]$FrameworkName)
 
@@ -155,6 +235,16 @@ function Get-TargetFrameworkFromFrameworkName {
     return $FrameworkName
 }
 
+<#
+.SYNOPSIS
+Reads the bundled runtime version from local runtime files.
+
+.DESCRIPTION
+Looks for known runtime assemblies in a folder and returns the product version when available.
+
+.PARAMETER DirectoryPath
+The directory containing the bundled runtime files.
+#>
 function Get-BundledRuntimeVersionFromFiles {
     param(
         [Parameter(Mandatory = $true)]
@@ -180,6 +270,16 @@ function Get-BundledRuntimeVersionFromFiles {
     return 'Unknown'
 }
 
+<#
+.SYNOPSIS
+Tests whether a directory contains bundled .NET runtime files.
+
+.DESCRIPTION
+Checks for common runtime assemblies that indicate a self-contained deployment.
+
+.PARAMETER DirectoryPath
+The directory to inspect.
+#>
 function Test-BundledRuntimeFiles {
     param(
         [Parameter(Mandatory = $true)]
@@ -196,6 +296,16 @@ function Test-BundledRuntimeFiles {
     return $false
 }
 
+<#
+.SYNOPSIS
+Infers a target framework from a runtime version string.
+
+.DESCRIPTION
+Maps runtime version identifiers to a normalized target framework value for common .NET runtime versions.
+
+.PARAMETER RuntimeVersion
+The runtime version string to interpret.
+#>
 function Get-TargetFrameworkFromRuntimeVersion {
     param(
         [AllowNull()]
@@ -246,6 +356,16 @@ function Get-TargetFrameworkFromRuntimeVersion {
     return 'Unknown'
 }
 
+<#
+.SYNOPSIS
+Parses runtimeconfig.json metadata for a .NET application.
+
+.DESCRIPTION
+Reads the target framework and runtime framework settings from a runtimeconfig.json file.
+
+.PARAMETER RuntimeConfigPath
+The path to the runtimeconfig.json file.
+#>
 function Get-InfoFromRuntimeConfig {
     param(
         [Parameter(Mandatory = $true)]
@@ -286,6 +406,16 @@ function Get-InfoFromRuntimeConfig {
     }
 }
 
+<#
+.SYNOPSIS
+Parses deps.json metadata for a .NET application.
+
+.DESCRIPTION
+Extracts runtime version and target framework clues from a deps.json file.
+
+.PARAMETER DepsJsonPath
+The path to the deps.json file.
+#>
 function Get-InfoFromDepsJson {
     param(
         [Parameter(Mandatory = $true)]
@@ -342,6 +472,16 @@ function Get-InfoFromDepsJson {
     }
 }
 
+<#
+.SYNOPSIS
+Attempts to detect the target framework via reflection.
+
+.DESCRIPTION
+Uses reflection to inspect assembly metadata as a fallback when other detection methods fail.
+
+.PARAMETER AssemblyPath
+The assembly file to inspect.
+#>
 function Get-ReflectionTargetFramework {
     param(
         [Parameter(Mandatory = $true)]
@@ -375,6 +515,16 @@ function Get-ReflectionTargetFramework {
 }
 
 
+<#
+.SYNOPSIS
+Repairs common mojibake character corruption in text values.
+
+.DESCRIPTION
+Normalizes common Unicode replacement-character artifacts in application metadata.
+
+.PARAMETER Text
+The text value to repair.
+#>
 function Repair-Mojibake {
     param(
         [AllowNull()]
@@ -416,6 +566,17 @@ function Repair-Mojibake {
 }
 
 
+<#
+.SYNOPSIS
+Detects whether a file is a .NET application and how it is deployed.
+
+.DESCRIPTION
+Examines runtimeconfig.json, bundled runtime files, deps.json, and reflection metadata to infer 
+deployment and target framework information.
+
+.PARAMETER File
+The file to analyze.
+#>
 function Find-DotNetUsage {
     param(
         [Parameter(Mandatory = $true)]
@@ -499,7 +660,10 @@ function Find-DotNetUsage {
         # Heuristic: managed-like apphost with no sidecar runtimeconfig/deps and no bundle files.
         # True bundle metadata parsing is not available in PS 5.1 without external tooling.
         try {
-            $fs = [System.IO.File]::Open($File.FullName, [System.IO.FileMode]::Open, [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+            $fs = [System.IO.File]::Open($File.FullName, [System.IO.FileMode]::Open, 
+                  [System.IO.FileAccess]::Read, [System.IO.FileShare]::ReadWrite)
+            
+            
             try {
                 $bytesToRead = [Math]::Min(65536, [int]$fs.Length)
                 $buffer = New-Object byte[] $bytesToRead
@@ -581,6 +745,16 @@ function Find-DotNetUsage {
     }
 }
 
+<#
+.SYNOPSIS
+Displays a grouped summary of detected .NET runtime usage.
+
+.DESCRIPTION
+Aggregates scan results by runtime family and prints a concise summary for each group.
+
+.PARAMETER Results
+The list of detected application results to summarize.
+#>
 function Show-RuntimeSummary {
     param(
         [Parameter(Mandatory = $true)]
@@ -599,7 +773,9 @@ function Show-RuntimeSummary {
         if ($r.Deployment -eq '.NET Framework' -and $r.'Target Framework' -match '^v') {
             $key = ".NET Framework $($r.'Target Framework'.TrimStart('v'))"
         }
-        elseif ($r.'Bundled Runtime Version' -and $r.'Bundled Runtime Version' -ne 'N/A' -and $r.'Bundled Runtime Version' -ne 'Unknown') {
+        elseif ($r.'Bundled Runtime Version' -and $r.'Bundled Runtime Version' -ne 'N/A' -and 
+                $r.'Bundled Runtime Version' -ne 'Unknown') {
+
             $maj = ($r.'Bundled Runtime Version' -split '\.')[0]
             if ($maj -match '^\d+$') {
                 $key = ".NET $maj Runtime"
@@ -642,16 +818,17 @@ function Show-RuntimeSummary {
     }
 }
 
-# ====================================================================================================================
-# == Main ============================================================================================================
-# ====================================================================================================================
+# ==== End of Methods =================================================================================================
+
+
+# == Main Block =======================================================================================================
 try {
     if (-not (Test-Path -LiteralPath $Path -PathType Container)) {
         throw "Path not found or not a directory: $Path"
     }
 
     $resolvedRoot = (Resolve-Path -LiteralPath $Path).Path
-    if (Test-IgnoredPath -FullPath $resolvedRoot) {
+    if (Test-IsIgnoredPath -FullPath $resolvedRoot) {
         throw "The specified path is ignored by policy: $resolvedRoot"
     }
 
@@ -689,7 +866,7 @@ try {
         }
 
         try {
-            if (Test-IgnoredPath -FullPath $f.FullName) {
+            if (Test-IsIgnoredPath -FullPath $f.FullName) {
                 Write-Verbose "Skipping ignored path: $($f.FullName)"
                 continue
             }
@@ -736,8 +913,9 @@ try {
 
 
                 $results |
-                Select-Object 'Application Name', 'Application Version', 'Exe Name', 'Full Path', 'Deployment', 'Target Framework', 'Bundled Runtime', 'Bundled Runtime Version', 'Detection Method' |
-                Export-Csv -LiteralPath $OutputFile -NoTypeInformation -Encoding $encoding
+                Select-Object 'Application Name', 'Application Version', 'Exe Name', 'Full Path', 'Deployment', 
+                              'Target Framework', 'Bundled Runtime', 'Bundled Runtime Version', 'Detection Method' |
+                              Export-Csv -LiteralPath $OutputFile -NoTypeInformation -Encoding $encoding
 
                 Write-Host "Results exported to: $OutputFile"
             }
@@ -752,8 +930,9 @@ try {
     else {
         if ($results.Count -gt 0) {
             $results |
-            Select-Object 'Application Name', 'Application Version', 'Exe Name', 'Full Path', 'Deployment', 'Target Framework', 'Bundled Runtime', 'Bundled Runtime Version', 'Detection Method' |
-            Format-Table -AutoSize
+            Select-Object 'Application Name', 'Application Version', 'Exe Name', 'Full Path', 'Deployment', 
+                          'Target Framework', 'Bundled Runtime', 'Bundled Runtime Version', 'Detection Method' |
+                          Format-Table -AutoSize
         }
         else {
             Write-Warning "No results found."
@@ -768,3 +947,5 @@ catch {
     Write-Error $_.Exception.Message
     exit 1
 }
+
+# ==== End of Script ==================================================================================================
