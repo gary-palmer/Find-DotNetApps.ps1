@@ -20,7 +20,7 @@ Scan a folder for `.exe` and `.dll` files and identify which .NET runtimes they 
   2. bundled runtime files (`coreclr.dll`, `hostfxr.dll`, `hostpolicy.dll`, `System.Private.CoreLib.dll`)
   3. `*.deps.json`
   4. single-file heuristic
-  5. reflection fallback
+  5. metadata fallback (`System.Reflection.Metadata`, no assembly loading)
 - Handles problematic files gracefully:
   - access denied
   - locked files
@@ -40,6 +40,7 @@ Scan a folder for `.exe` and `.dll` files and identify which .NET runtimes they 
 - No .NET SDK required
 - No Visual Studio required
 - No third-party PowerShell modules required
+- Windows PowerShell 5.1 only: `System.Reflection.Metadata.dll` and `System.Collections.Immutable.dll` (from the NuGet packages of the same names, `lib/netstandard2.0`) must be in the same folder as the script. PowerShell 7 has them built in.
 
 ---
 
@@ -137,7 +138,7 @@ Example noisy runtime input handled:
 
 ### .NET Framework apps
 
-`.NET Framework` apps are detected from managed metadata/reflection and reported as:
+`.NET Framework` apps are detected from managed assembly metadata and reported as:
 
 - `v2.0`, `v3.0`, `v3.5`
 - `v4.0` ... `v4.8`, `v4.8.1`

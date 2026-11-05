@@ -500,10 +500,10 @@ function Get-InfoFromDepsJson {
 
 <#
 .SYNOPSIS
-Attempts to detect the target framework via reflection.
+Attempts to detect the target framework by reading assembly metadata.
 
 .DESCRIPTION
-Uses reflection to inspect assembly metadata as a fallback when other detection methods fail.
+Uses System.Reflection.Metadata to read assembly metadata (without loading the assembly) as a fallback when other detection methods fail.
 
 .PARAMETER AssemblyPath
 The assembly file to inspect.
@@ -514,29 +514,60 @@ function Get-ReflectionTargetFramework {
         [string]$AssemblyPath
     )
 
-    try {
-        # Step 5 fallback: only called when earlier checks fail.
-        $an = [Reflection.AssemblyName]::GetAssemblyName($AssemblyPath)
-        if (-not $an) {
-            return $null
+    if (-not ('System.Reflection.Metadata.MetadataReader' -as [type])) {
+        # Load the copy placed next to the script (needed on Windows PowerShell 5.1).
+        $dllDir = if ($PSScriptRoot) { $PSScriptRoot } else { (Get-Location).Path }
+        # Dependencies first so the metadata assembly can resolve them.
+        foreach ($name in 'System.Collections.Immutable.dll', 'System.Reflection.Metadata.dll') {
+            $dllPath = Join-Path $dllDir $name
+            if (-not (Test-Path -LiteralPath $dllPath)) {
+                throw "$name not found. Place it in '$dllDir'."
+            }
+            Add-Type -Path $dllPath -ErrorAction Stop
         }
+    }
 
-        $asm = [Reflection.Assembly]::ReflectionOnlyLoadFrom($AssemblyPath)
+    $fs = $null
+    $pe = $null
+    try {
+        $fs = [System.IO.File]::OpenRead($AssemblyPath)
+        $pe = [System.Reflection.PortableExecutable.PEReader]::new($fs)
 
-        $cad = [Reflection.CustomAttributeData]::GetCustomAttributes($asm) |
-        Where-Object { $_.AttributeType.FullName -eq 'System.Runtime.Versioning.TargetFrameworkAttribute' } |
-        Select-Object -First 1
+        # Not a PE file with CLI metadata, so it is native.
+        if (-not $pe.HasMetadata) { return $null }
 
-        if ($cad -and $cad.ConstructorArguments.Count -gt 0) {
-            $frameworkName = [string]$cad.ConstructorArguments[0].Value
-            return (Get-TargetFrameworkFromFrameworkName -FrameworkName $frameworkName)
+        $md = [System.Reflection.Metadata.PEReaderExtensions]::GetMetadataReader($pe)
+        foreach ($h in $md.GetAssemblyDefinition().GetCustomAttributes()) {
+            $attr = $md.GetCustomAttribute($h)
+            if ($attr.Constructor.Kind -ne [System.Reflection.Metadata.HandleKind]::MemberReference) { continue }
+            $mr = $md.GetMemberReference([System.Reflection.Metadata.MemberReferenceHandle]$attr.Constructor)
+            if ($mr.Parent.Kind -ne [System.Reflection.Metadata.HandleKind]::TypeReference) { continue }
+            $tr = $md.GetTypeReference([System.Reflection.Metadata.TypeReferenceHandle]$mr.Parent)
+            if ($md.GetString($tr.Name) -ne 'TargetFrameworkAttribute') { continue }
+
+            $br = $md.GetBlobReader($attr.Value)
+            if ($br.ReadUInt16() -eq 1) {
+                $frameworkName = $br.ReadSerializedString()
+                if ($frameworkName) {
+                    return (Get-TargetFrameworkFromFrameworkName -FrameworkName $frameworkName)
+                }
+            }
+            break
         }
 
         return 'Managed (framework unknown)'
     }
-    catch {
-        Write-Verbose "Reflection failed for '$AssemblyPath': $($_.Exception.Message)"
+    catch [System.BadImageFormatException] {
+        Write-Verbose "Not a managed assembly '$AssemblyPath': $($_.Exception.Message)"
         return $null
+    }
+    catch [System.IO.IOException], [System.UnauthorizedAccessException] {
+        Write-Verbose "Cannot read '$AssemblyPath': $($_.Exception.Message)"
+        return $null
+    }
+    finally {
+        if ($pe) { $pe.Dispose() }
+        if ($fs) { $fs.Dispose() }
     }
 }
 
