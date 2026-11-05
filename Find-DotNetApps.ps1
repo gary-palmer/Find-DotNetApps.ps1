@@ -523,8 +523,6 @@ function Get-ReflectionTargetFramework {
             if (-not (Test-Path -LiteralPath $dllPath)) {
                 throw "$name not found. Place it in '$dllDir'."
             }
-            # Downloaded DLLs carry a Mark of the Web and fail to load (0x80131515) until unblocked.
-            Unblock-File -LiteralPath $dllPath -ErrorAction SilentlyContinue
             Add-Type -Path $dllPath -ErrorAction Stop
         }
     }
