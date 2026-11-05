@@ -5,6 +5,11 @@ All notable changes to this project are documented in this file.
 The format is inspired by [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project follows [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+- Replace reflection-based framework detection with `System.Reflection.Metadata`. Fixes managed files being reported as "Managed (unknown runtime)" or "Native" depending on PowerShell version.
+- Windows PowerShell 5.1 requires `System.Reflection.Metadata.dll` and `System.Collections.Immutable.dll` next to the script.
+
 ## [1.1.1] - 2026-08-10
 Bug fix. 
 
